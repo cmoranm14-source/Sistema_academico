@@ -60,6 +60,10 @@ class EstudianteController(CrudBase):
             datos.append(estudiante.a_diccionario())
         self.gestor.guardar(datos)
 
+    def carnets_registrados(self, excepto_id=None):
+        """CONJUNTO de carnets ya usados: preguntar 'x in conjunto' es instantáneo."""
+        return {r.carnet.upper() for r in self.lista if r.id != excepto_id}
+
     def validar(self, datos, id_actual=None):
         """Devuelve un mensaje de error, o None si todo está bien."""
         # Al crear, estos campos son obligatorios.
@@ -84,20 +88,10 @@ class EstudianteController(CrudBase):
         # Validamos que el carnet no esté vacío ni repetido.
         if "carnet" in datos:
             carnet = str(datos["carnet"]).strip().upper()
-
             if carnet == "":
                 return "El carnet es obligatorio"
-
-            # CONJUNTO: evita carnets repetidos.
-            carnets_usados = {
-                e.carnet.strip().upper()
-                for e in self.lista
-                if e.id != id_actual
-            }
-
-            if carnet in carnets_usados:
+            if carnet in self.carnets_registrados(id_actual):
                 return "Ese carnet ya está registrado"
-
         return None
 
     def leer(self):
@@ -118,86 +112,66 @@ class EstudianteController(CrudBase):
     def buscar(self, texto):
         texto = str(texto).strip().lower()
         encontrados = []
-
         if texto == "":
             return encontrados
 
-        # TUPLA: campos en los que se permite buscar.
-        campos_busqueda = (
-            "nombre", "apellido", "email", "carnet", "carrera"
-        )
-
         for estudiante in self.lista:
-            for campo in campos_busqueda:
-                valor = str(getattr(estudiante, campo, "")).lower()
-
-                if texto in valor:
-                    encontrados.append(estudiante)
-                    break
-
+            if (texto in estudiante.nombre.lower()
+                or texto in estudiante.apellido.lower()
+                    or texto in estudiante.email.lower()
+                    or texto in estudiante.carnet.lower()
+                    or texto in estudiante.carrera.lower()):
+                encontrados.append(estudiante)
         return encontrados
 
     def siguiente(self):
         mayor = 0
-
         for estudiante in self.lista:
             if estudiante.id > mayor:
                 mayor = estudiante.id
-
         return mayor + 1
 
     def crear(self, datos):
         error = self.validar(datos)
-
         if error:
             return False, error
 
-        estudiante = Estudiante(
-            self.siguiente(),
-            str(datos["nombre"]).strip().title(),
-            str(datos["apellido"]).strip().title(),
-            str(datos["email"]).strip().lower(),
-            str(datos["carnet"]).strip().upper(),
-            str(datos.get("carrera", "")).strip().title()
-        )
-
+        estudiante = Estudiante(self.siguiente(),
+                                str(datos["nombre"]).strip().title(),
+                                str(datos["apellido"]).strip().title(),
+                                str(datos["email"]).strip().lower(),
+                                str(datos["carnet"]).strip().upper(),
+                                str(datos.get("carrera", "")).strip().title())
         self.lista.append(estudiante)
         self.guardar()
-
         return True, f"Estudiante creado: {estudiante.etiqueta()}"
 
     def actualizar(self, id_registro, datos):
         estudiante = self.obtener(id_registro)
-
         if estudiante is None:
             return False, f"No existe un estudiante con id {id_registro}"
-
         if not datos:
             return False, "No se indicó ningún cambio"
 
         # CONJUNTO: campos que se pueden modificar.
         permitidos = {"nombre", "apellido", "email", "carnet", "carrera"}
         desconocidos = set(datos) - permitidos
-
         if desconocidos:
             return False, f"Campos no válidos: {', '.join(sorted(desconocidos))}"
 
         # Validamos antes de modificar el estudiante.
         error = self.validar(datos, estudiante.id)
-
         if error:
             return False, error
 
         for campo, valor in datos.items():
             valor = str(valor).strip()
-
             if campo in ("nombre", "apellido", "carrera"):
                 valor = valor.title()
             elif campo == "email":
                 valor = valor.lower()
             elif campo == "carnet":
                 valor = valor.upper()
-
             setattr(estudiante, campo, valor)
 
         self.guardar()
@@ -207,9 +181,9 @@ class EstudianteController(CrudBase):
         estudiante = self.obtener(id_registro)
         if estudiante is None:
             return False, f"No existe un estudiante con id {id_registro}"
+        
         self.lista.remove(estudiante)
         self.guardar()
-
         return True, f"Estudiante {id_registro} eliminado"
 
     def carreras(self):
@@ -223,7 +197,6 @@ class MateriaController(CrudBase):
 
     def __init__(self, archivo="data/materias.json"):
         self.gestor = GestorJSON(archivo)
-
         self.lista = []
         for datos in self.gestor.leer():
             self.lista.append(Materia.desde_diccionario(datos))
@@ -244,12 +217,7 @@ class MateriaController(CrudBase):
             codigo = str(datos["codigo"]).strip().upper()
 
             # CONJUNTO: evita códigos repetidos.
-            codigos_usados = {
-                m.codigo.upper()
-                for m in self.lista
-                if m.id != id_actual
-            }
-
+            codigos_usados = {m.codigo.upper() for m in self.lista if m.id != id_actual}
             if codigo == "":
                 return "El código es obligatorio"
 
@@ -261,19 +229,21 @@ class MateriaController(CrudBase):
                 creditos = int(datos["creditos"])
             except (TypeError, ValueError):
                 return "Los créditos deben ser un número entero"
-
             if not 1 <= creditos <= 10:
                 return "Los créditos deben estar entre 1 y 10"
-
         if "cupos" in datos:
             try:
                 cupos = int(datos["cupos"])
             except (TypeError, ValueError):
                 return "Los cupos deben ser un número entero"
-
             if not 0 <= cupos <= Materia.CUPOS_MAXIMOS:
                 return f"Los cupos deben estar entre 0 y {Materia.CUPOS_MAXIMOS}"
-
+            
+        if "nombre" in datos:
+            nombre = str(datos["nombre"]).strip().title()
+            for otro in self.lista:
+                if otro.nombre == nombre and otro.id != id_actual:
+                    return f"Ya existe un materia llamado {nombre}"
         return None
 
     def leer(self):
@@ -288,146 +258,85 @@ class MateriaController(CrudBase):
         for materia in self.lista:
             if materia.id == id_registro:
                 return materia
-
         return None
 
     def buscar(self, texto):
         texto = str(texto).strip().lower()
         encontrados = []
-
         if texto == "":
             return encontrados
 
-        # TUPLA: campos en los que se permite buscar.
-        campos_busqueda = ("nombre", "codigo")
-
         for materia in self.lista:
-            for campo in campos_busqueda:
-                valor = str(getattr(materia, campo, "")).lower()
-
-                if texto in valor:
+            if (texto in materia.nombre.lower()
+                or texto in materia.codigo.lower()):
                     encontrados.append(materia)
-                    break
-
         return encontrados
 
     def siguiente(self):
         mayor = 0
-
         for materia in self.lista:
             if materia.id > mayor:
                 mayor = materia.id
-
         return mayor + 1
 
     def crear(self, datos):
-        datos_validar = dict(datos)
-        datos_validar.setdefault("creditos", 1)
-        datos_validar.setdefault("cupos", 0)
-
-        error = self.validar(datos_validar)
+        error = self.validar(datos)
         if error:
             return False, error
-
-        materia = Materia(
-            self.siguiente(),
-            str(datos["nombre"]).strip().title(),
-            str(datos["codigo"]).strip().upper(),
-            int(datos_validar["creditos"]),
-            int(datos_validar["cupos"])
-        )
-
+        materia = Materia(self.siguiente(),
+                        str(datos["nombre"]).strip().title(),
+                        str(datos["codigo"]).strip().upper(),
+                        int(datos.get("creditos", 1)),
+                        int(datos.get("cupos", 0)))
         self.lista.append(materia)
         self.guardar()
-
         return True, f"Materia creada: {materia.etiqueta()}"
 
-    def actualizar(self, id_registro, datos):
-        materia = self.obtener(id_registro)
-
+    def actualizar(self, id_materia, datos):
+        materia = self.obtener(id_materia)
         if materia is None:
-            return False, f"No existe la materia {id_registro}"
-
+            return False, f"No existe la materia {id_materia}"
         if not datos:
             return False, "No se indicó ningún cambio"
 
-        # CONJUNTO: campos que se pueden modificar.
-        permitidos = {"nombre", "codigo", "creditos", "cupos"}
-        desconocidos = set(datos) - permitidos
-
+        desconocidos = set(datos) - {"nombre", "codigo", "creditos", "cupos"}
         if desconocidos:
             return False, f"Campos no válidos: {', '.join(sorted(desconocidos))}"
 
-        error = self.validar(datos, materia.id)
+        error = self.validar(datos, id_materia)
         if error:
             return False, error
-
-        if "cupos" in datos:
-            nuevos_cupos = int(datos["cupos"])
-            ocupados = len(self.matriculas_asociadas(materia.id))
-
-            # Los cupos disponibles más los ocupados no deben superar 30.
-            if nuevos_cupos + ocupados > Materia.CUPOS_MAXIMOS:
-                return False, (
-                    "Los cupos disponibles más las matrículas existentes "
-                    "no pueden superar el máximo de 30"
-                )
-
+            
         if "nombre" in datos:
             materia.nombre = str(datos["nombre"]).strip().title()
-
         if "codigo" in datos:
             materia.codigo = str(datos["codigo"]).strip().upper()
-
         if "creditos" in datos:
             materia.creditos = int(datos["creditos"])
-
         if "cupos" in datos:
             materia.cupos = int(datos["cupos"])
 
         self.guardar()
-        return True, f"Materia {id_registro} actualizada"
+        return True, f"Materia {id_materia} actualizada"
 
     def eliminar(self, id_registro):
         materia = self.obtener(id_registro)
-
         if materia is None:
             return False, f"No existe la materia {id_registro}"
-
-        if self.matriculas_asociadas(materia.id):
-            return False, (
-                "No se puede eliminar la materia porque tiene "
-                "matrículas registradas"
-            )
-
+ 
         self.lista.remove(materia)
         self.guardar()
-
         return True, f"Materia {id_registro} eliminada"
 
     def materias_sin_cupos(self):
-        return [
-            materia for materia in self.lista
-            if materia.cupos == 0
-        ]
-
-    def matriculas_asociadas(self, id_materia):
-        """Obtiene las matrículas relacionadas con una materia."""
-        if not hasattr(self, "matriculas"):
-            return []
-
-        return [
-            matricula for matricula in self.matriculas.leer()
-            if matricula.materia_id == id_materia
-        ]
+        return [materia for materia in self.lista if materia.cupos == 0]
 
 # =====================================================================
-# CONTROLADOR DE VENTAS
+# CONTROLADOR DE MATRICULAS
 # =====================================================================
 class MatriculaController(CrudBase):
 
-    def __init__(self, estudiantes, materias,
-                 archivo="data/matriculas.json"):
+    def __init__(self, estudiantes, materias, archivo="data/matriculas.json"):
         # Utiliza los mismos controladores que main.py.
         self.estudiantes = estudiantes
         self.materias = materias
@@ -458,41 +367,30 @@ class MatriculaController(CrudBase):
         for matricula in self.lista:
             if matricula.id == id_registro:
                 return matricula
-
         return None
 
     def buscar(self, texto):
         texto = str(texto).strip().lower()
         encontradas = []
-
         if texto == "":
             return encontradas
 
-        # TUPLA: campos en los que se permite buscar.
-        campos_busqueda = ("periodo", "estudiante_id", "materia_id")
-
         for matricula in self.lista:
-            for campo in campos_busqueda:
-                valor = str(getattr(matricula, campo, "")).lower()
-
-                if texto in valor:
+            if (texto in matricula.periodo.lower()
+                or texto in matricula.id_estudiante.lower()
+                or texto in matricula.id_materia.lower()):
                     encontradas.append(matricula)
-                    break
-
         return encontradas
 
     def siguiente(self):
         mayor = 0
-
         for matricula in self.lista:
             if matricula.id > mayor:
                 mayor = matricula.id
-
         return mayor + 1
 
     def crear(self, datos):
         """Registra una matrícula y descuenta un cupo."""
-
         try:
             estudiante_id = int(datos.get("estudiante_id", 0))
             materia_id = int(datos.get("materia_id", 0))
@@ -500,7 +398,6 @@ class MatriculaController(CrudBase):
             return False, "Los IDs deben ser números enteros"
 
         periodo = str(datos.get("periodo", "")).strip()
-
         if not periodo:
             return False, "El periodo académico es obligatorio"
 
@@ -519,36 +416,25 @@ class MatriculaController(CrudBase):
         # TUPLA: identifica estudiante, materia y periodo.
         combinacion = (estudiante_id, materia_id, periodo.lower())
 
-        combinaciones_existentes = {
-            (m.estudiante_id, m.materia_id, m.periodo.lower())
-            for m in self.lista
-        }
-
+        combinaciones_existentes = {(m.estudiante_id, m.materia_id, m.periodo.lower()) for m in self.lista}
         if combinacion in combinaciones_existentes:
-            return False, (
-                "El estudiante ya está matriculado en esa materia "
-                "durante ese periodo"
-            )
-        if not materia.hay_cupo(1):
+            return False, ("El estudiante ya está matriculado en esa materia durante ese periodo")
+        if materia.cupos <= 0:
             return False, f"La materia {materia.nombre} no tiene cupos"
 
         matricula = Matricula(self.siguiente(),
-            estudiante_id,
-            materia_id,
-            periodo)
+                            estudiante_id,
+                            materia_id,
+                            periodo)
         
-        materia.ocupar_cupo(1)
+        materia.cupos -= 1
         self.lista.append(matricula)
         self.materias.guardar()
         self.guardar()
         return True, f"Matrícula {matricula.id} registrada correctamente"
 
     def actualizar(self, id_registro, datos):
-        return False, ("Las matrículas no se pueden modificar directamente. "
-            "Retire la matrícula y registre otra.")
-    def eliminar(self, id_registro):
-        # Eliminar una matrícula equivale a retirarla y devolver su cupo.
-        return self.retirar_matricula(id_registro)
+        return False, ("Las matrículas no se pueden modificar directamente: retire la matrícula y registre otra.")
 
     def registrar_nota(self, id_registro, nota):
         matricula = self.obtener(id_registro)
@@ -558,9 +444,9 @@ class MatriculaController(CrudBase):
             return False, "La nota debe ser un número entre 0 y 20"
         matricula.nota = float(nota)
         self.guardar()
-        return True, f"Nota registrada para la matrícula {id_registro}"
+        return True, f"Nota registrada exitosamente {id_registro}"
     
-    def retirar_matricula(self, id_registro):
+    def eliminar(self, id_registro):  #retirar matricula
         matricula = self.obtener(id_registro)
         if matricula is None:
             return False, f"No existe la matrícula {id_registro}"
@@ -569,13 +455,11 @@ class MatriculaController(CrudBase):
             # Evita superar el máximo permitido al devolver el cupo.
             if materia.cupos >= Materia.CUPOS_MAXIMOS:
                 return False, "No se puede devolver el cupo: se superaría el máximo"
-
-            materia.liberar_cupo(1)
+            materia.cupos += 1
             self.materias.guardar()
 
         self.lista.remove(matricula)
         self.guardar()
-
         return True, f"Matrícula {id_registro} retirada correctamente"
 
     def certificado(self, id_estudiante):
@@ -610,17 +494,21 @@ class MatriculaController(CrudBase):
         return texto
 
     def matriculas_por_estudiante(self):
-        """Agrupa las matrículas de cada estudiante en una lista."""
-        agrupadas = {}
-        for matricula in self.lista:
-            agrupadas.setdefault(matricula.estudiante_id, []).append(matricula)
-        return agrupadas
+        """Filtra y devuelve las matrículas de un alumno."""
+        try:
+            estudiante_id = int(estudiante_id)
+        except (TypeError, ValueError):
+            return []
+
+        filtradas = []
+        for m in self.lista:
+            if m.estudiante_id == estudiante_id:
+                filtradas.append(m)
+        return filtradas
 
     def promedio_por_estudiante(self, id_estudiante):
-        matriculas = [m for m in self.lista if m.estudiante_id == int(id_estudiante)]
+        matriculas = self.matriculas_por_estudiante(id_estudiante)
         if not matriculas:
             return None
         return sum(m.nota for m in matriculas) / len(matriculas)
 
-    def matriculas_aprobadas(self):
-        return [matricula for matricula in self.lista if matricula.esta_aprobada()]
