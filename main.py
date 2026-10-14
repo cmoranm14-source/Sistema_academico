@@ -370,12 +370,10 @@ def resumen():
 
     carreras = sorted(estudiantes.carreras())
     sin_cupos = materias.materias_sin_cupos()
-    aprobadas = matriculas.matriculas_aprobadas()
 
     print(f"  Estudiantes registrados : {len(estudiantes.leer())}")
     print(f"  Materias registradas    : {len(materias.leer())}")
     print(f"  Matrículas registradas  : {len(matriculas.leer())}")
-    print(f"  Matrículas aprobadas    : {len(aprobadas)}")
 
     print("\nCarreras registradas:")
     if carreras:

@@ -493,7 +493,7 @@ class MatriculaController(CrudBase):
                     + "-" * 45 + "\n")
         return texto
 
-    def matriculas_por_estudiante(self):
+    def matriculas_por_estudiante(self, estudiante_id):
         """Filtra y devuelve las matrículas de un alumno."""
         try:
             estudiante_id = int(estudiante_id)
